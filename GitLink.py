@@ -57,43 +57,46 @@ class GitlinkCommand(sublime_plugin.TextCommand):
         os.chdir(path + "/")
 
         # Find the remote of the current branch
-        branch_names = [self.getoutput("git symbolic-ref --short HEAD"), "master", "main"]
-        for branch_name in branch_names:
+        local_branch = self.getoutput("git symbolic-ref --short HEAD")
+        local_branches = [local_branch, "master", "main"]
+        for branch_name in local_branches:
             try:
                 remote_name = self.getoutput("git config --get branch.{}.remote".format(branch_name))
+                tracking_branch = self.getoutput("git rev-parse --symbolic-full-name {}".format(branch_name))
+                remote_branch = self.getoutput("git for-each-ref --format='%(upstream:short)' {}".format(tracking_branch))[len(remote_name)+1:]
                 break
             except:
                 pass
         if not remote_name:
             return
 
-        remote = self.getoutput("git remote get-url {}".format(remote_name))
-        remote = re.sub('.git$', '', remote)
+        remote_url = self.getoutput("git remote get-url {}".format(remote_name))
+        remote_url = re.sub('.git$', '', remote_url)
 
         # Select the right hosting configuration
         for hosting_name, hosting in HOSTINGS.items():
-            if hosting_name in remote:
+            if hosting_name in remote_url:
                 # We found a match, so keep these variable assignments
                 break
 
         # Use ssh, except when the remote url starts with http:// or https://
-        use_ssh = re.match(r'^https?://', remote) is None
+        use_ssh = re.match(r'^https?://', remote_url) is None
         if use_ssh:
             # Allow `ssh://` and a port to be part of the remote
             project = None
             match = re.match(
                 r'^(?:ssh://)?([^:]+):\d*/?([^/]+)/([^/]+)',
-                remote
+                remote_url
             )
             if match:
                 pieces = match.groups()
                 domain, user, repo = pieces
             else:
                 # failsafe if regex doesn't match
-                # Below index lookups always succeed, nu matter whether the
+                # Below index lookups always succeed, no matter whether the
                 # split character exists
-                domain = remote.split(':', 1)[0].split('@', 1)[-1]
-                pieces = remote.split(':', 1)[-1].split("/")
+                domain = remote_url.split(':', 1)[0].split('@', 1)[-1]
+                pieces = remote_url.split(':', 1)[-1].split("/")
                 if hosting_name == 'codebasehq':
                     # format is codebasehq.com:{user}/{project}/{repo}.git
                     user, project, repo = pieces
@@ -117,19 +120,21 @@ class GitlinkCommand(sublime_plugin.TextCommand):
             # HTTP repository
             if hosting_name == 'codebasehq':
                 # format is {user}.codebasehq.com/{project}/{repo}.git
-                domain, project, repo = remote.split("/")
+                domain, project, repo = remote_url.split("/")
                 # user is first segment of domain
                 user, domain = domain.split('.', 1)
             else:
                 # format is {domain}/{user}/{repo}.git
-                domain, user, repo = remote.split("://")[-1].split("/")
+                domain, user, repo = remote_url.split("://")[-1].split("/")
                 project = None
-        print(domain, user, repo)
+
         # Find top level repo in current dir structure
         remote_path = self.getoutput("git rev-parse --show-prefix")
 
         # Find the current revision
         revision = self.getoutput("git rev-parse HEAD")
+        if revision == self.getoutput("git rev-parse {}".format(tracking_branch)):
+            revision = remote_branch
 
         # Choose the view type we'll use
         if 'blame' in args and args['blame']:
