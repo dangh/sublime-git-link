@@ -57,10 +57,16 @@ class GitlinkCommand(sublime_plugin.TextCommand):
         os.chdir(path + "/")
 
         # Find the remote of the current branch
-        branch_name = self.getoutput("git symbolic-ref --short HEAD")
-        remote_name = self.getoutput(
-            "git config --get branch.{}.remote".format(branch_name)
-        )
+        branch_names = [self.getoutput("git symbolic-ref --short HEAD"), "master", "main"]
+        for branch_name in branch_names:
+            try:
+                remote_name = self.getoutput("git config --get branch.{}.remote".format(branch_name))
+                break
+            except:
+                pass
+        if not remote_name:
+            return
+
         remote = self.getoutput("git remote get-url {}".format(remote_name))
         remote = re.sub('.git$', '', remote)
 
